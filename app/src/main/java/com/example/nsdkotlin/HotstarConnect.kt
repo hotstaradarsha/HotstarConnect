@@ -1,17 +1,20 @@
-import android.app.Activity
+import android.app.Service
 import android.content.Context
 import android.net.nsd.NsdManager
 import android.net.nsd.NsdServiceInfo
-import android.webkit.JsPromptResult
+import android.widget.Toast
 import com.example.nsdkotlin.Connection
 import com.example.nsdkotlin.ServiceObject
 import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.*
 import org.json.JSONObject
+import java.io.BufferedReader
+import java.io.InputStreamReader
 import java.lang.Exception
 import java.lang.ref.WeakReference
 import java.net.ServerSocket
+import java.nio.charset.StandardCharsets
 import java.util.*
 import kotlin.coroutines.resume
 import kotlin.coroutines.suspendCoroutine
@@ -23,22 +26,28 @@ class HotstarConnect( var serviceName :String,var context : WeakReference<Contex
 
     //NsdManager needed from the Android Library to be able to manage communication
     private lateinit var nsdManager: NsdManager
-    private val serviceList : MutableList<ServiceObject> = mutableListOf()
+    private var serviceList : MutableSet<ServiceObject> = mutableSetOf()
     private val SERVICE_TYPE : String = "_http._tcp."
+    lateinit private var serverSocket : ServerSocket
 
 
 
     init{
         //initialising the NsdManager
-      //  try{
+       try{
  nsdManager = context.get()?.getSystemService(Context.NSD_SERVICE) as NsdManager
-   // }catch(e :Exception){
+    }catch(e :Exception){
         // try to throw some error serviceObject
-
-    //}
+            }
          }
 
 
+
+    suspend  fun showToast(s : String){
+        withContext(Dispatchers.Main) {
+            Toast.makeText(context.get(), s, Toast.LENGTH_SHORT).show()
+        }
+    }
 
     //discover function for getting the list of services
 
@@ -64,7 +73,9 @@ fun discover(): Flow<MutableList<ServiceObject>> = callbackFlow{
             if(service.serviceName.contains(serviceName)) {
                 val serviceobject = ServiceObject(service)
                 serviceList.add(serviceobject)
-                offer(serviceList)
+
+
+                offer(serviceList.toMutableList())
             }
 
             //  if (service.serviceName.contains(serviceName)){nsdManager.resolveService(service, resolveListener)}
@@ -78,9 +89,10 @@ fun discover(): Flow<MutableList<ServiceObject>> = callbackFlow{
             if(service.serviceName.contains(serviceName)) {
             val serviceobject = ServiceObject(service)
             serviceList.remove(serviceobject)
-            offer(serviceList)}
+
+                offer(serviceList.toMutableList())
             //var++;
-        }
+        }  }
 
         override fun onDiscoveryStopped(serviceType: String) {
             //Log.i(TAG, "Discovery stopped: $serviceType")
@@ -159,8 +171,8 @@ fun discover(): Flow<MutableList<ServiceObject>> = callbackFlow{
         val serviceInfo = NsdServiceInfo().apply {
             // The name is subject to change based on conflicts
             // with other services advertised on the same network.
-            serviceName = serviceName
-            serviceType = SERVICE_TYPE
+            this.serviceName = this@HotstarConnect.serviceName + android.os.Build.MODEL
+            this.serviceType = SERVICE_TYPE
             setPort(port)
         }
 
@@ -174,24 +186,43 @@ fun discover(): Flow<MutableList<ServiceObject>> = callbackFlow{
 fun broadcast():Flow<JSONObject> =  flow{
     //setting up a free port for communication
     var mLocalPort: Int  =0
-    val serverSocket = ServerSocket(0).also { socket ->
+     serverSocket = ServerSocket(0).also { socket ->
             // Store the chosen port.
             mLocalPort = socket.localPort
+            showToast(""+ mLocalPort)
             registerService(mLocalPort)
         }
     // register the service with that port
-    val socket =  serverSocket.accept()
-    val scanner : Scanner = socket.getInputStream() as Scanner
-    while(scanner.hasNext()){
-         val str = scanner.next()
-         val json : JSONObject = JSONObject(str)
-         emit(json)
+        //keep listening to the port and send the flow
+ while(true) {
+     try{
+     val socket = serverSocket.accept()
+     showToast("socket accepted")
+     val isr =  InputStreamReader(socket.getInputStream(), StandardCharsets.UTF_8);
+     val reader =  BufferedReader(isr)
+    // val dis = Scanner(socket.getInputStream())
+     val str = reader.readLine()
+     val json: JSONObject = JSONObject(str)
+     showToast(str + " received")
+     emit(json)}
+     catch (e : Exception){}
+
+    }
+
     }
 
 
+    //call this in ondestroy of your activity
+    fun stopBroadcast(){
+        try{
+             if(!serverSocket.isClosed()){serverSocket.close()}
+            nsdManager.unregisterService(registrationListener)
 
-
+        }
+        catch(e : Exception){}
     }
+
+
 
 
 }

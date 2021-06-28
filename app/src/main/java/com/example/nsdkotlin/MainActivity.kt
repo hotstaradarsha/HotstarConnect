@@ -26,6 +26,10 @@ class MainActivity : AppCompatActivity() {
   lateinit var serviceList : MutableList<ServiceObject>
   lateinit  var adapter : MyAdapter
   lateinit var  listview : ListView
+    companion object {
+        @JvmStatic lateinit var con : Connection
+    }
+
     fun showToast(s : String){
         runOnUiThread {
             Toast.makeText(this@MainActivity, s, Toast.LENGTH_SHORT).show()
@@ -39,6 +43,16 @@ class MainActivity : AppCompatActivity() {
          serviceList  = mutableListOf()
         adapter = MyAdapter(serviceList,this,hotstarconnect)
 
+        GlobalScope.launch {
+            val messageflow = hotstarconnect.broadcast()
+            messageflow.collect {
+                  try {val msg : String = it.get("message") as String
+                showToast(msg)}
+                  catch (e : Exception){showToast("error in message")}
+
+            }
+        }
+
        val discoverButton = findViewById(R.id.discoverbutton) as Button
         discoverButton.setOnClickListener(View.OnClickListener {
             GlobalScope.launch {
@@ -49,6 +63,8 @@ class MainActivity : AppCompatActivity() {
                    if(serviceList.size>0){showToast(serviceList[0].service.serviceName as String)}
                    else { showToast("empty list")}
                    withContext(Dispatchers.Main){
+                      // try{ if(adapter.connection.isConnected()==1){con = adapter.connection}}
+                      // catch (e :Exception){}
                        adapter = MyAdapter(serviceList,this@MainActivity,hotstarconnect)
                        listview.setAdapter(adapter)
                    }
@@ -64,25 +80,25 @@ class MainActivity : AppCompatActivity() {
         var sendbutton = findViewById(R.id.sendbutton) as Button
         sendbutton.setOnClickListener(View.OnClickListener {
             GlobalScope.launch {
-                try{
-                    if(adapter.connection.isConnected()==1){
+              // try{
+                    if(con.isConnected()==1){
                         var json =  JSONObject()
-                        var msg = edittext.text as String
+                        var msg = edittext.text.toString()
                         json.put("message",msg)
 
-                        adapter.connection.sendJson(json)
+                        con.sendJson(json)
                         showToast("sent" + msg)
                     }
 
                     else { showToast("can't send as not connected")}
-                }
-                catch(e: Exception){}
+              // }
+              // catch(e: Exception){showToast("error in sending")}
             }
         })
 
     }
 
-    class MyAdapter(var serviceList : MutableList<ServiceObject>, var c : Context,var hconnect : HotstarConnect) : BaseAdapter() {
+    class MyAdapter(var serviceList : MutableList<ServiceObject>, var c: MainActivity,var hconnect : HotstarConnect) : BaseAdapter() {
       lateinit var connection : Connection
         // override other abstract methods here
 
@@ -111,7 +127,8 @@ class MainActivity : AppCompatActivity() {
                     if(connection.isConnected()==1){
 
                         withContext(Dispatchers.Main) {
-                            Toast.makeText(c, "Connected", Toast.LENGTH_SHORT).show()
+                            MainActivity.con = connection
+                            Toast.makeText(c, "Connected "+ connection.service.port, Toast.LENGTH_SHORT).show()
                         }
                     }
                     else{
@@ -127,5 +144,10 @@ class MainActivity : AppCompatActivity() {
 
     }
 
+
+    override fun onDestroy() {
+        hotstarconnect.stopBroadcast()
+        super.onDestroy()
+    }
 }
 
