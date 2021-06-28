@@ -29,6 +29,7 @@ class HotstarConnect( var serviceName :String,var context : WeakReference<Contex
     private var serviceList : MutableSet<ServiceObject> = mutableSetOf()
     private val SERVICE_TYPE : String = "_http._tcp."
     lateinit private var serverSocket : ServerSocket
+    lateinit var discoveryListener : NsdManager.DiscoveryListener
 
 
 
@@ -57,7 +58,7 @@ fun discover(): Flow<MutableList<ServiceObject>> = callbackFlow{
 
 
     // Instantiate a new DiscoveryListener
-    val discoveryListener = object : NsdManager.DiscoveryListener {
+     discoveryListener = object : NsdManager.DiscoveryListener {
 
         // Called as soon as service discovery begins.
         override fun onDiscoveryStarted(regType: String) {
@@ -114,8 +115,8 @@ fun discover(): Flow<MutableList<ServiceObject>> = callbackFlow{
 
     nsdManager.discoverServices(SERVICE_TYPE, NsdManager.PROTOCOL_DNS_SD, discoveryListener)
 
-
-   awaitClose(){nsdManager.stopServiceDiscovery(discoveryListener)}
+// i think it should be there
+   awaitClose{nsdManager.stopServiceDiscovery(discoveryListener)}
 }
 
 
@@ -214,11 +215,14 @@ fun broadcast():Flow<JSONObject> =  flow{
 
     //call this in ondestroy of your activity
     fun stopBroadcast(){
-        try{
-             if(!serverSocket.isClosed()){serverSocket.close()}
-            nsdManager.unregisterService(registrationListener)
-
-        }
+        // close the socket for the broadcaster
+        try{ if(!serverSocket.isClosed()){serverSocket.close()} }
+        catch(e : Exception){}
+        //close the registration
+        try{nsdManager.unregisterService(registrationListener)}
+        catch (e : Exception){}
+        //close discovering
+        try{nsdManager.stopServiceDiscovery(discoveryListener)}
         catch(e : Exception){}
     }
 

@@ -29,6 +29,7 @@ class Connection internal constructor( internal val service : NsdServiceInfo, in
             OutputStreamWriter(
                 clientsocket.getOutputStream(), StandardCharsets.UTF_8
             ).use { out -> out.write(jsonobject.toString()) }
+           clientsocket.close()
             /*val out = PrintWriter(
                 BufferedWriter(
                     OutputStreamWriter(clientsocket.getOutputStream())
