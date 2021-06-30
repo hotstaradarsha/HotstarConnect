@@ -26,9 +26,12 @@ class Connection internal constructor( internal val service : NsdServiceInfo, in
        try {
             var message = jsonobject.toString()
             var clientsocket = Socket(service.host, service.port)
-            OutputStreamWriter(
+           var outstream =   OutputStreamWriter(
                 clientsocket.getOutputStream(), StandardCharsets.UTF_8
-            ).use { out -> out.write(jsonobject.toString()) }
+            )
+           outstream.use { out -> out.write(jsonobject.toString()) }
+           //closing the stram and the socket
+           outstream.close()
            clientsocket.close()
             /*val out = PrintWriter(
                 BufferedWriter(

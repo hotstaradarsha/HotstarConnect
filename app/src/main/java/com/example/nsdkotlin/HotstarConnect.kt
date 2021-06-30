@@ -19,6 +19,10 @@ import java.util.*
 import kotlin.coroutines.resume
 import kotlin.coroutines.suspendCoroutine
 
+
+//add internet permissions with this library
+
+
 //weak reference of the context
 class HotstarConnect( var serviceName :String,var context : WeakReference<Context>){
 
@@ -203,6 +207,7 @@ fun broadcast():Flow<JSONObject> =  flow{
      val reader =  BufferedReader(isr)
     // val dis = Scanner(socket.getInputStream())
      val str = reader.readLine()
+         reader.close()   // close the bufferedreader to avoid memory leak
      val json: JSONObject = JSONObject(str)
      showToast(str + " received")
      emit(json)}
