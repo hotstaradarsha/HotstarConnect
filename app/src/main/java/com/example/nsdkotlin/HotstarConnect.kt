@@ -1,18 +1,23 @@
-import android.app.Service
+import android.app.Application
 import android.content.Context
 import android.net.nsd.NsdManager
 import android.net.nsd.NsdServiceInfo
+import android.net.wifi.WifiManager
+
+import android.util.Log
 import android.widget.Toast
+import androidx.core.content.ContentProviderCompat.requireContext
 import com.example.nsdkotlin.Connection
 import com.example.nsdkotlin.ServiceObject
+import com.example.nsdkotlin.TwoWayConnection
 import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.*
 import org.json.JSONObject
 import java.io.BufferedReader
 import java.io.InputStreamReader
-import java.lang.Exception
 import java.lang.ref.WeakReference
+import java.net.InetAddress
 import java.net.ServerSocket
 import java.nio.charset.StandardCharsets
 import java.util.*
@@ -33,14 +38,18 @@ class HotstarConnect( var serviceName :String,var context : WeakReference<Contex
     private var serviceList : MutableSet<ServiceObject> = mutableSetOf()
     private val SERVICE_TYPE : String = "_http._tcp."
     lateinit private var serverSocket : ServerSocket
+    lateinit private var clientserverSocket : ServerSocket
     lateinit var discoveryListener : NsdManager.DiscoveryListener
+// all listener and sockets are for the functions close , so as to not leave garbage
+    //is connected is 0 so can't send message
 
 
 
     init{
         //initialising the NsdManager
        try{
- nsdManager = context.get()?.getSystemService(Context.NSD_SERVICE) as NsdManager
+
+            nsdManager = context.get()?.getSystemService(Context.NSD_SERVICE) as NsdManager
     }catch(e :Exception){
         // try to throw some error serviceObject
             }
@@ -124,18 +133,19 @@ fun discover(): Flow<MutableList<ServiceObject>> = callbackFlow{
 }
 
 
-  suspend fun connect(serviceobject: ServiceObject) : Connection =  suspendCoroutine{
+  internal suspend fun connectHelper(serviceobject: ServiceObject) : Connection =  suspendCoroutine{
       nsdManager.resolveService(serviceobject.service, object : NsdManager.ResolveListener {
 
           override fun onResolveFailed(serviceInfo: NsdServiceInfo, errorCode: Int) {
               // Called when the resolve fails. Use the error code to debug.
-             val connection = Connection(serviceInfo)
+             val connection = Connection(serviceInfo.host, serviceInfo.port)
               it.resume(connection)
           }
 
           override fun onServiceResolved(serviceInfo: NsdServiceInfo) {
               //Log.e(TAG, "Resolve Succeeded. $serviceInfo")
-             val connection = Connection(serviceInfo,1)
+             val connection = Connection(serviceInfo.host, serviceInfo.port,1)
+
               it.resume(connection)
 
           }
@@ -144,6 +154,52 @@ fun discover(): Flow<MutableList<ServiceObject>> = callbackFlow{
 
 
   }
+
+    //not a null flow is what you get , it's initialised even if to empty
+
+    suspend fun connect(serviceobject: ServiceObject):TwoWayConnection{
+        var c : Connection = connectHelper(serviceobject)
+        var flow : Flow<JSONObject> = flow{}
+
+            if(c.isConnected()==1){
+                var mLocalPort: Int  =0
+                clientserverSocket = ServerSocket(0).also { socket ->
+                    // Store the chosen port.
+                    mLocalPort = socket.localPort}
+
+
+                val wm = context.get()?.applicationContext?.getSystemService(Context.WIFI_SERVICE) as WifiManager
+                val hostIP: String = android.text.format.Formatter.formatIpAddress(wm.connectionInfo.ipAddress)
+
+                Log.e("hotstar", hostIP)
+                var json = JSONObject()
+                json.put("hostip" , hostIP)
+                json.put("port" , mLocalPort)
+                c.sendJson(json)
+                flow= flow {
+                    while(true) {
+                        try{
+                            val socket = clientserverSocket.accept()
+                            showToast("client socket accepted")
+                            val isr =  InputStreamReader(socket.getInputStream(), StandardCharsets.UTF_8);
+                            val reader =  BufferedReader(isr)
+                            // val dis = Scanner(socket.getInputStream())
+                            val str = reader.readLine()
+                            reader.close()   // close the bufferedreader to avoid memory leak
+                            val json: JSONObject = JSONObject(str)
+                            showToast(str + " received")
+                            emit(json)}
+                        catch (e : Exception){}
+
+                    }
+                }
+
+
+            }
+
+
+        return TwoWayConnection(c, flow)
+    }
 
 
     private val registrationListener = object : NsdManager.RegistrationListener {
@@ -188,53 +244,101 @@ fun discover(): Flow<MutableList<ServiceObject>> = callbackFlow{
 
 
     //should we have such a while loop here , also should a flow be suspend function
-fun broadcast():Flow<JSONObject> =  flow{
-    //setting up a free port for communication
-    var mLocalPort: Int  =0
-     serverSocket = ServerSocket(0).also { socket ->
+suspend fun broadcast(): TwoWayConnection {
+
+        var mLocalPort: Int = 0
+        serverSocket = ServerSocket(0).also { socket ->
             // Store the chosen port.
             mLocalPort = socket.localPort
-            showToast(""+ mLocalPort)
+            showToast("" + mLocalPort)
             registerService(mLocalPort)
         }
-    // register the service with that port
-        //keep listening to the port and send the flow
- while(true) {
-     try{
-     val socket = serverSocket.accept()
-     showToast("socket accepted")
-     val isr =  InputStreamReader(socket.getInputStream(), StandardCharsets.UTF_8);
-     val reader =  BufferedReader(isr)
-    // val dis = Scanner(socket.getInputStream())
-     val str = reader.readLine()
-         reader.close()   // close the bufferedreader to avoid memory leak
-     val json: JSONObject = JSONObject(str)
-     showToast(str + " received")
-     emit(json)}
-     catch (e : Exception){}
+       var connection : Connection = Connection(null,0,0)
 
-    }
+        //try {
+            val socket = serverSocket.accept()
 
-    }
+            Log.e("hotstar","socket accepted for client" )
+            val isr = InputStreamReader(socket.getInputStream(), StandardCharsets.UTF_8);
+            val reader = BufferedReader(isr)
+            // val dis = Scanner(socket.getInputStream())
+            val str = reader.readLine()
+            reader.close()   // close the bufferedreader to avoid memory leak
+            val json: JSONObject = JSONObject(str)
+            var clientPort: Int = json.get("port") as Int
+            var clientIP: String = json.get("hostip") as String
+        Log.e("hotstar",clientIP)
+            var inet = InetAddress.getByName(clientIP)
+        Log.e("hotstar","no exception till here" )
+            connection = Connection(inet, clientPort, 1)
 
+       // } catch (e: Exception) {
+          //  showToast("exception in broadcast")
+       // }
 
-    //call this in ondestroy of your activity
-    fun stopBroadcast(){
-        // close the socket for the broadcaster
-        try{ if(!serverSocket.isClosed()){serverSocket.close()} }
-        catch(e : Exception){}
-        //close the registration
-        try{nsdManager.unregisterService(registrationListener)}
-        catch (e : Exception){}
-        //close discovering
-        try{nsdManager.stopServiceDiscovery(discoveryListener)}
-        catch(e : Exception){}
-    }
+        var flow : Flow<JSONObject> = flow {
+            //setting up a free port for communication
+
+            // register the service with that port
 
 
+            //get the client details for a two way communication
 
+            //keep listening to the port and send the flow
+            while (true) {
+                try {
+                    val socket = serverSocket.accept()
+                    showToast("socket accepted")
+                    val isr = InputStreamReader(socket.getInputStream(), StandardCharsets.UTF_8);
+                    val reader = BufferedReader(isr)
+                    // val dis = Scanner(socket.getInputStream())
+                    val str = reader.readLine()
+                    reader.close()   // close the bufferedreader to avoid memory leak
+                    val json: JSONObject = JSONObject(str)
+                    showToast(str + " received")
+                    emit(json)
+                } catch (e: Exception) {
+                }
 
+            }
+
+        }
+        return TwoWayConnection(connection,flow)
 }
+
+
+        //call this in ondestroy of your activity
+        fun stopBroadcast() {
+            // close the socket for the broadcaster
+            try {
+                if (!serverSocket.isClosed()) {
+                    serverSocket.close()
+                }
+            } catch (e: Exception) {
+            }
+            //close sockets of the client
+            try {
+                if (!clientserverSocket.isClosed()) {
+                    clientserverSocket.close()
+                }
+            } catch (e: Exception) {
+            }
+            //close the registration
+            try {
+                nsdManager.unregisterService(registrationListener)
+            } catch (e: Exception) {
+            }
+            //close discovering
+            try {
+                nsdManager.stopServiceDiscovery(discoveryListener)
+            } catch (e: Exception) {
+            }
+        }
+    }
+
+
+
+
 
 
 

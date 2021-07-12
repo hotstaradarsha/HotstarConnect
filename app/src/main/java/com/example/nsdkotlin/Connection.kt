@@ -1,19 +1,25 @@
 package com.example.nsdkotlin
 
 import android.net.nsd.NsdServiceInfo
+import android.webkit.JsPromptResult
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import java.io.OutputStreamWriter
+import java.net.InetAddress
 import java.net.Socket
 import java.nio.charset.StandardCharsets
+import kotlinx.coroutines.flow.*
 
-class Connection internal constructor( internal val service : NsdServiceInfo, internal var connected : Int =0) {
+class Connection internal constructor( internal var host :InetAddress?,internal var port :Int , internal var connected : Int =0) {
 //allowed to check , out of the module , if the connection is valid or not
-
+//internal var clientFlow : Flow<JSONObject> = flow {  }
     fun isConnected(): Int {
         return connected
     }
+
+
+
 
 
     //want to send the Ack back to the phone , 1 if successfull else 0 when failure occurs
@@ -21,11 +27,14 @@ class Connection internal constructor( internal val service : NsdServiceInfo, in
     //should i do it myself?? if i do this then the dev would anyway have to call it inside another couroutine??
     // i think they would start a couroutine and call these functions there?
   suspend  fun sendJson(jsonobject: JSONObject): Int {
+        //straight 0 if not connected
+
+        if(isConnected()==0){return 0}
         var ret  =0
         withContext(Dispatchers.IO){
        try {
             var message = jsonobject.toString()
-            var clientsocket = Socket(service.host, service.port)
+            var clientsocket = Socket(host, port)
            var outstream =   OutputStreamWriter(
                 clientsocket.getOutputStream(), StandardCharsets.UTF_8
             )

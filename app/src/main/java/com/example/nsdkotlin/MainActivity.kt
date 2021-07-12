@@ -27,7 +27,7 @@ class MainActivity : AppCompatActivity() {
   lateinit  var adapter : MyAdapter
   lateinit var  listview : ListView
     companion object {
-        @JvmStatic lateinit var con : Connection
+        @JvmStatic lateinit var con : TwoWayConnection
     }
 
     fun showToast(s : String){
@@ -38,20 +38,49 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
+        var edittext = findViewById(R.id.edittext) as EditText
 
-         hotstarconnect = HotstarConnect("hotstar", WeakReference(this@MainActivity.applicationContext))
+        hotstarconnect = HotstarConnect("hotstar", WeakReference(this@MainActivity.applicationContext))
          serviceList  = mutableListOf()
         adapter = MyAdapter(serviceList,this,hotstarconnect)
 
         GlobalScope.launch {
-            val messageflow = hotstarconnect.broadcast()
+           val  conn = hotstarconnect.broadcast()
+            showToast("broadcast returned")
+            val messageflow = conn.getFlow()
+
+            withContext(Dispatchers.Main){
+                var sendclientbutton = findViewById(R.id.clientsendbutton) as Button
+                sendclientbutton.setOnClickListener(View.OnClickListener {
+                    GlobalScope.launch() {
+                        // try{
+                        if(conn.isConnected()==1){
+                            var json =  JSONObject()
+                            var msg = edittext.text.toString()
+                            json.put("message",msg)
+
+                            conn.sendJson(json)
+                            showToast("sent to client" + msg)
+                        }
+
+                        else { showToast("can't send as not connected")}
+                        // }
+                        // catch(e: Exception){showToast("error in sending")}
+                    }
+                })
+            }
+
             messageflow.collect {
                   try {val msg : String = it.get("message") as String
                 showToast(msg)}
                   catch (e : Exception){showToast("error in message")}
 
             }
+
+
+
         }
+
 
        val discoverButton = findViewById(R.id.discoverbutton) as Button
         discoverButton.setOnClickListener(View.OnClickListener {
@@ -75,7 +104,6 @@ class MainActivity : AppCompatActivity() {
   listview = findViewById(R.id.list_view) as ListView
         listview.setAdapter(adapter)
 
-        var edittext = findViewById(R.id.edittext) as EditText
 
         var sendbutton = findViewById(R.id.sendbutton) as Button
         sendbutton.setOnClickListener(View.OnClickListener {
@@ -88,6 +116,14 @@ class MainActivity : AppCompatActivity() {
 
                         con.sendJson(json)
                         showToast("sent" + msg)
+
+                        var flower= con.getFlow()
+                        flower.collect {
+                            try {val msg : String = it.get("message") as String
+                                showToast(msg)}
+                            catch (e : Exception){showToast("error in message")}
+
+                        }
                     }
 
                     else { showToast("can't send as not connected")}
@@ -96,10 +132,13 @@ class MainActivity : AppCompatActivity() {
             }
         })
 
+
+
+
     }
 
     class MyAdapter(var serviceList : MutableList<ServiceObject>, var c: MainActivity,var hconnect : HotstarConnect) : BaseAdapter() {
-      lateinit var connection : Connection
+      lateinit var connection : TwoWayConnection
         // override other abstract methods here
 
         override fun getCount(): Int {
@@ -128,7 +167,7 @@ class MainActivity : AppCompatActivity() {
 
                         withContext(Dispatchers.Main) {
                             MainActivity.con = connection
-                            Toast.makeText(c, "Connected "+ connection.service.port, Toast.LENGTH_SHORT).show()
+                            Toast.makeText(c, "Connected "+ connection.connection.port, Toast.LENGTH_SHORT).show()
                         }
                     }
                     else{

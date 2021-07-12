@@ -27,6 +27,12 @@
         android:layout_margin="20dp"
         android:text="Send"
         android:id="@+id/sendbutton"/>
+    <Button
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_margin="20dp"
+        android:text="Send to client"
+        android:id="@+id/clientsendbutton"/>
 
     <ListView
         android:id="@+id/list_view"

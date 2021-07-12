@@ -1,5 +1,8 @@
 package com.example.TVconnnect
 
+import android.app.Activity
+import android.content.Context
+import android.content.Intent
 import android.net.Uri
 import com.example.nsdkotlin.Connection
 import kotlinx.coroutines.flow.Flow
@@ -15,11 +18,12 @@ class TvConnect {
         return con.sendJson(json)
 
     }
-
-    suspend fun executeCommand(flow : Flow<JSONObject>){
+// i think method can't /contain a garbage and the passed value would go away as soon as it is passed??
+    suspend fun executeCommand(flow : Flow<JSONObject>, context : Context){
         flow.collect {
             val ss : String = it.getString("url")
             val uri : Uri = Uri.parse(ss)
+            context.startActivity(Intent(Intent.ACTION_VIEW,uri))
 
         }
     }
